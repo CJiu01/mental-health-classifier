@@ -29,6 +29,7 @@ class EmotionClusterer:
             min_cluster_size=100,
             metric="euclidean",
             cluster_selection_method="eom",
+            prediction_data=True,   # required for transform() on new points
         )
         self._topic_model  = None
         self._risk_topic_ids: list = []
