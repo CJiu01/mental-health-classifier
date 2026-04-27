@@ -9,7 +9,7 @@ import sys
 from datetime import datetime, timezone
 
 import torch
-from transformers import pipeline, BitsAndBytesConfig
+from transformers import pipeline
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import LLM_HF_MODEL, VALID_RISK_LEVELS, VALID_EMOTIONS
@@ -26,17 +26,18 @@ ZERO_SHOT_PROMPT = (
 class ZeroShotClassifier:
 
     def __init__(self):
-        # Free GPU memory left by previous models (e.g. SentenceTransformer)
+        # Ch.1 runs on CPU: it is a baseline-only model.
+        # GPU is reserved for Ch.4 (SentenceTransformer) which remains loaded.
         gc.collect()
-        torch.cuda.empty_cache()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
-        print("[Ch.1] Loading Phi-3 pipeline (4-bit quantized)...")
-        bnb_config = BitsAndBytesConfig(load_in_4bit=True)
+        print("[Ch.1] Loading Phi-3 pipeline on CPU (baseline mode)...")
         self._pipe = pipeline(
             "text-generation",
             model=LLM_HF_MODEL,
-            device_map="auto",
-            model_kwargs={"quantization_config": bnb_config},
+            device_map="cpu",
+            torch_dtype=torch.float32,
             trust_remote_code=False,
             return_full_text=False,
             max_new_tokens=60,
