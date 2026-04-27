@@ -94,7 +94,7 @@ mental-health-classifier/
 
 ```python
 # 1. Clone & install
-!git clone https://github.com/YOUR_USERNAME/mental-health-classifier.git
+!git clone https://github.com/CJiu01/mental-health-classifier.git
 %cd mental-health-classifier
 !pip install -r requirements.txt
 
@@ -116,7 +116,7 @@ print(out["risk_level"], out["risk_score"], out["emotion_scores"])
 ```
 
 **Open in Colab:**
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/YOUR_USERNAME/mental-health-classifier/blob/main/notebooks/prototype.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/CJiu01/mental-health-classifier/blob/main/notebooks/prototype.ipynb)
 
 ---
 
