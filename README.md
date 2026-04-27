@@ -5,6 +5,45 @@
 
 ---
 
+## 🌐 Web Demo
+
+Enter any short text and get an instant mental health risk assessment.
+
+| 🟠 Negative Example | 🟢 Positive Example |
+|---|---|
+| ![demo_negative](assets/demo_negative.png) | ![demo_positive](assets/demo_positive.png) |
+
+### Run the Web App Locally
+
+```bash
+# 1. Clone the repo
+git clone https://github.com/CJiu01/mental-health-classifier.git
+cd mental-health-classifier
+
+# 2. Install dependencies (quick mode)
+pip install gradio torch sentence-transformers scikit-learn datasets numpy joblib
+
+# 3. Launch
+python app.py
+```
+
+Open **http://127.0.0.1:7860** in your browser.  
+A public share URL (`https://xxxxx.gradio.live`) is also printed — share it with anyone.
+
+> **First run:** the app automatically downloads the dataset and trains the Ch.4 model (~2–3 min).  
+> Subsequent runs start immediately using the saved model.
+
+### Run in Google Colab
+
+```python
+!git clone https://github.com/CJiu01/mental-health-classifier.git
+%cd mental-health-classifier
+!pip install -q gradio
+%run app.py   # prints a public URL
+```
+
+---
+
 ## Overview
 
 A prototype system that detects mental health signals from short, unstructured daily text (diary entries, social media posts) using techniques from **Chapters 1–7** of *Hands-On Large Language Models*.
@@ -45,6 +84,31 @@ SentenceTransformer (768-dim)        ← Ch.2 / Ch.4
 
 ---
 
+## Pipeline Modes
+
+| Mode | Modules | Speed | Output |
+|---|---|---|---|
+| `quick` | Ch.4 only | ~0.1s | risk_level, emotion_scores, trend |
+| `full` | Ch.4 + Ch.6 + Ch.7 | ~3–5s (GPU) | + reasoning, recommendation, empathy |
+
+```python
+from pipeline import MentalHealthPipeline
+
+# Quick mode (works on CPU / Mac local)
+pipe = MentalHealthPipeline(mode="quick")
+out  = pipe.run("I feel so hopeless today.")
+print(out["risk_level"], out["risk_score"], out["emotion_scores"])
+
+# Full mode (requires GPU for Phi-3 GGUF)
+pipe = MentalHealthPipeline(mode="full")
+out  = pipe.run("I feel so hopeless today.")
+print(out["recommendation"])    # actionable advice
+print(out["empathy_response"])  # empathetic reply
+print(out["trend_direction"])   # improving / stable / deteriorating
+```
+
+---
+
 ## Chapters → Modules
 
 | Chapter | Technique | Module |
@@ -55,7 +119,7 @@ SentenceTransformer (768-dim)        ← Ch.2 / Ch.4
 | Ch.4 | SentenceTransformer + LogisticRegression | `modules/ch4_classifier.py` |
 | Ch.5 | UMAP + HDBSCAN + BERTopic clustering | `modules/ch5_clustering.py` |
 | Ch.6 | 6-component + 2-shot + CoT prompt | `modules/ch6_prompt.py` |
-| Ch.7 | ConversationWindowMemory + empathy chain | `modules/ch7_memory.py` |
+| Ch.7 | Sliding-window memory + empathy chain | `modules/ch7_memory.py` |
 
 ---
 
@@ -63,11 +127,13 @@ SentenceTransformer (768-dim)        ← Ch.2 / Ch.4
 
 ```
 mental-health-classifier/
+├── app.py                     # Gradio web demo
 ├── config.py                  # Global constants & hyperparameters
 ├── schemas.py                 # TypedDict definitions (Input/Output)
 ├── pipeline.py                # Main orchestrator (quick / full mode)
 ├── evaluate.py                # Experiment runner (Exp 1–3)
 ├── requirements.txt
+├── assets/                    # Demo screenshots
 ├── data/
 │   └── loader.py              # dair-ai/emotion dataset loader
 ├── modules/
@@ -90,58 +156,6 @@ mental-health-classifier/
 
 ---
 
-## Quick Start (Google Colab)
-
-```python
-# 1. Clone & install
-!git clone https://github.com/CJiu01/mental-health-classifier.git
-%cd mental-health-classifier
-!pip install -r requirements.txt
-
-# 2. Load data & train core classifier
-from data.loader import load_emotion_dataset
-from modules.ch4_classifier import MentalHealthClassifier
-
-data = load_emotion_dataset()
-clf  = MentalHealthClassifier()
-clf.train(data["train"]["texts"], data["train"]["labels"])
-clf.save()
-
-# 3. Run quick inference
-from pipeline import MentalHealthPipeline
-
-pipe = MentalHealthPipeline(mode="quick")
-out  = pipe.run("I feel so tired and hopeless lately.")
-print(out["risk_level"], out["risk_score"], out["emotion_scores"])
-```
-
-**Open in Colab:**
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/CJiu01/mental-health-classifier/blob/main/notebooks/prototype.ipynb)
-
----
-
-## Pipeline Modes
-
-| Mode | Modules | Speed | Output |
-|---|---|---|---|
-| `quick` | Ch.4 only | ~0.1s | risk_level, emotion_scores, trend |
-| `full` | Ch.4 + Ch.6 + Ch.7 | ~3–5s (GPU) | + reasoning, recommendation, empathy |
-
-```python
-# Quick mode
-pipe = MentalHealthPipeline(mode="quick")
-out  = pipe.run("I feel so hopeless today.")
-
-# Full mode
-pipe = MentalHealthPipeline(mode="full")
-out  = pipe.run("I feel so hopeless today.")
-print(out["recommendation"])   # actionable advice
-print(out["empathy_response"]) # empathetic reply
-print(out["trend_direction"])  # improving / stable / deteriorating
-```
-
----
-
 ## Dataset
 
 [`dair-ai/emotion`](https://huggingface.co/datasets/dair-ai/emotion) — 20,000 English short texts labeled with 6 emotions:
@@ -156,11 +170,31 @@ print(out["trend_direction"])  # improving / stable / deteriorating
 
 ---
 
+## Experimental Results
+
+| Metric | Ch.4 LogisticReg (trained) | Ch.2 Anchor Cosine (no-train) |
+|---|---|---|
+| Accuracy | 0.552 | 0.481 |
+| Macro F1 | 0.440 | 0.352 |
+
+**6-emotion accuracy (Ch.4):** 0.62 · Macro F1: 0.56
+
+**Risk distribution on test set:** Positive 34.9% · Neutral 26.1% · Negative 20.8% · Crisis 18.3%
+
+---
+
 ## Requirements
 
 - Python 3.10+
-- CUDA GPU recommended for Ch.6 / Ch.7 (Google Colab T4 sufficient)
+- Quick mode (web demo): CPU sufficient
+- Full mode (Ch.6 / Ch.7): CUDA GPU recommended (Google Colab T4 sufficient)
 - See `requirements.txt` for full dependency list
+
+---
+
+## Open in Colab
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/CJiu01/mental-health-classifier/blob/main/notebooks/prototype.ipynb)
 
 ---
 

@@ -16,8 +16,10 @@ venv/
 saved_models/*.pkl
 sessions/*.json
 
-# Output figures
+# Output figures (generated — exclude)
 *.png
+# But keep demo screenshots in assets/
+!assets/*.png
 
 # IDE
 .vscode/
