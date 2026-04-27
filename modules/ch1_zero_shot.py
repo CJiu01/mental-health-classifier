@@ -3,10 +3,13 @@ Ch.1 — Zero-Shot Baseline
 Phi-3-mini-4k-instruct via HuggingFace pipeline, no training required.
 """
 
+import gc
 import os
 import sys
 from datetime import datetime, timezone
-from transformers import pipeline
+
+import torch
+from transformers import pipeline, BitsAndBytesConfig
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import LLM_HF_MODEL, VALID_RISK_LEVELS, VALID_EMOTIONS
@@ -23,12 +26,17 @@ ZERO_SHOT_PROMPT = (
 class ZeroShotClassifier:
 
     def __init__(self):
-        print("[Ch.1] Loading Phi-3 pipeline...")
+        # Free GPU memory left by previous models (e.g. SentenceTransformer)
+        gc.collect()
+        torch.cuda.empty_cache()
+
+        print("[Ch.1] Loading Phi-3 pipeline (4-bit quantized)...")
+        bnb_config = BitsAndBytesConfig(load_in_4bit=True)
         self._pipe = pipeline(
             "text-generation",
             model=LLM_HF_MODEL,
             device_map="auto",
-            torch_dtype="auto",
+            model_kwargs={"quantization_config": bnb_config},
             trust_remote_code=False,
             return_full_text=False,
             max_new_tokens=60,
