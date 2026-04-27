@@ -83,21 +83,21 @@ class EmotionalMemorySystem:
 
     # ── LLM lazy loader ────────────────────────────────────────────────────────
 
+    def set_llm(self, llm) -> None:
+        """Accept a pre-loaded Llama instance (e.g. from ch6) to avoid double loading."""
+        self._llm       = llm
+        self._llm_ready = True
+
     def _ensure_llm(self) -> None:
         if self._llm_ready:
             return
         print("[Ch.7] Loading LlamaCpp for empathy chain...")
-        from huggingface_hub import hf_hub_download
-        from langchain_community.llms import LlamaCpp
-        model_path = hf_hub_download(
-            repo_id=LLM_REPO_ID, filename=LLM_FILENAME
-        )
-        self._llm = LlamaCpp(
-            model_path   = model_path,
+        from llama_cpp import Llama
+        self._llm = Llama.from_pretrained(
+            repo_id      = LLM_REPO_ID,
+            filename     = LLM_FILENAME,
             n_gpu_layers = -1,
             n_ctx        = 2048,
-            temperature  = 0.7,
-            max_tokens   = 150,
             verbose      = False,
         )
         self._llm_ready = True
@@ -160,7 +160,8 @@ class EmotionalMemorySystem:
             risk_level    = risk_level,
             user_text     = text,
         )
-        response = self._llm.invoke(prompt).strip()
+        output   = self._llm(prompt, max_tokens=150, temperature=0.7, stop=["\n\n"])
+        response = output["choices"][0]["text"].strip()
         self._window_buffer.save_context(text, response)
         return response
 

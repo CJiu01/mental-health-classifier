@@ -94,7 +94,8 @@ class MentalHealthPipeline:
         result["reasoning"]     = prompt_out.get("reasoning")
         result["recommendation"]= prompt_out.get("recommendation")
 
-        memory                  = self._get_memory()
+        memory = self._get_memory()
+        memory.set_llm(self._prompter._llm)   # reuse ch6 LLM, avoid double loading
         result["empathy_response"] = memory.generate_empathy(
             text, result["risk_level"]
         )
