@@ -3,7 +3,7 @@
 EMBEDDING_MODEL = "sentence-transformers/all-mpnet-base-v2"
 ANCHOR_MODEL    = "sentence-transformers/all-MiniLM-L6-v2"
 LLM_REPO_ID     = "microsoft/Phi-3-mini-4k-instruct-gguf"
-LLM_FILENAME    = "*fp16.gguf"
+LLM_FILENAME    = "Phi-3-mini-4k-instruct-fp16.gguf"
 LLM_HF_MODEL    = "microsoft/Phi-3-mini-4k-instruct"
 DATASET_NAME    = "dair-ai/emotion"
 
