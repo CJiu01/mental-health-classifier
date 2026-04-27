@@ -11,6 +11,23 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import gradio as gr
 
+# ── Auto-train if saved model is missing ──────────────────────────────────────
+def _ensure_model():
+    from config import SAVED_MODELS_DIR
+    model_path = os.path.join(SAVED_MODELS_DIR, "ch4_logreg.pkl")
+    if not os.path.exists(model_path):
+        print("[App] ch4 model not found — auto-training on dair-ai/emotion …")
+        print("[App] This takes ~2–3 min on first run (downloading dataset + encoding).")
+        from data.loader import load_emotion_dataset
+        from modules.ch4_classifier import MentalHealthClassifier
+        data = load_emotion_dataset()
+        clf  = MentalHealthClassifier()
+        clf.train(data["train"]["texts"], data["train"]["labels"])
+        clf.save()
+        print("[App] Training complete. Model saved.")
+
+_ensure_model()
+
 # ── Lazy pipeline loader ───────────────────────────────────────────────────────
 _pipelines: dict = {}
 
