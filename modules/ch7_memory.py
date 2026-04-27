@@ -1,7 +1,7 @@
 """
 Ch.7 — Conversational Memory & Longitudinal Tracking
 Layer 1: Custom EmotionLog (trend tracking, 7-day window)
-Layer 2: LangChain ConversationBufferWindowMemory + ConversationSummaryMemory
+Layer 2: Sliding-window conversation buffer + LlamaCpp empathy chain
 """
 
 import os
@@ -9,10 +9,6 @@ import sys
 import json
 import numpy as np
 from datetime import datetime, timezone
-from langchain.memory import ConversationBufferWindowMemory, ConversationSummaryMemory
-from langchain_community.llms import LlamaCpp
-from langchain.prompts import PromptTemplate
-from langchain.chains import LLMChain
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import (
@@ -20,11 +16,7 @@ from config import (
     RISK_WEIGHT, SESSIONS_DIR
 )
 
-# ── Empathy Prompt ─────────────────────────────────────────────────────────────
-
-EMPATHY_TEMPLATE = PromptTemplate(
-    input_variables=["user_text", "risk_level", "trend_summary", "chat_history"],
-    template="""\
+EMPATHY_TEMPLATE = """\
 You are a compassionate mental health support assistant.
 
 Conversation history:
@@ -40,8 +32,7 @@ Provide a brief (2-3 sentences) empathetic response that:
 - Is calibrated to the {risk_level} risk level
 - For "Crisis": always include a professional help encouragement
 
-Response:""",
-)
+Response:"""
 
 TONE_GUIDE = {
     "Positive": "Reinforce positive momentum warmly.",
@@ -51,6 +42,29 @@ TONE_GUIDE = {
 }
 
 
+class _WindowBuffer:
+    """Sliding-window conversation buffer (replaces ConversationBufferWindowMemory)."""
+
+    def __init__(self, k: int = 7):
+        self.k = k
+        self._messages: list = []
+
+    def save_context(self, user_msg: str, ai_msg: str) -> None:
+        self._messages.append({"role": "user",      "content": user_msg})
+        self._messages.append({"role": "assistant", "content": ai_msg})
+        if len(self._messages) > self.k * 2:
+            self._messages = self._messages[-(self.k * 2):]
+
+    def format_history(self) -> str:
+        if not self._messages:
+            return ""
+        lines = []
+        for msg in self._messages:
+            prefix = "User" if msg["role"] == "user" else "Assistant"
+            lines.append(f"{prefix}: {msg['content']}")
+        return "\n".join(lines)
+
+
 class EmotionalMemorySystem:
 
     def __init__(self, session_id: str, k: int = MEMORY_WINDOW_K):
@@ -58,15 +72,14 @@ class EmotionalMemorySystem:
         self.k          = k
 
         # Layer 1: custom emotion log
-        self._log: list = []          # list of MemoryEntry dicts
-        self._total_entries: int = 0
+        self._log: list           = []
+        self._total_entries: int  = 0
+        self._archive_summary: str = ""
 
-        # Layer 2: LangChain memory objects (initialised lazily)
-        self._window_memory  = None
-        self._summary_memory = None
-        self._empathy_chain  = None
-        self._llm            = None
-        self._llm_ready      = False
+        # Layer 2: sliding window buffer + LLM (lazy)
+        self._window_buffer = _WindowBuffer(k=k)
+        self._llm           = None
+        self._llm_ready     = False
 
     # ── LLM lazy loader ────────────────────────────────────────────────────────
 
@@ -75,23 +88,17 @@ class EmotionalMemorySystem:
             return
         print("[Ch.7] Loading LlamaCpp for empathy chain...")
         from huggingface_hub import hf_hub_download
-        model_path = hf_hub_download(repo_id=LLM_REPO_ID, filename="Phi-3-mini-4k-instruct-fp16.gguf")
-        self._llm  = LlamaCpp(
-            model_path    = model_path,
-            n_gpu_layers  = -1,
-            n_ctx         = 2048,
-            temperature   = 0.7,
-            max_tokens    = 150,
-            verbose       = False,
+        from langchain_community.llms import LlamaCpp
+        model_path = hf_hub_download(
+            repo_id=LLM_REPO_ID, filename=LLM_FILENAME
         )
-        self._window_memory  = ConversationBufferWindowMemory(
-            k=self.k, memory_key="chat_history"
-        )
-        self._summary_memory = ConversationSummaryMemory(
-            llm=self._llm, memory_key="long_term_summary"
-        )
-        self._empathy_chain  = LLMChain(
-            prompt=EMPATHY_TEMPLATE, llm=self._llm, memory=self._window_memory
+        self._llm = LlamaCpp(
+            model_path   = model_path,
+            n_gpu_layers = -1,
+            n_ctx        = 2048,
+            temperature  = 0.7,
+            max_tokens   = 150,
+            verbose      = False,
         )
         self._llm_ready = True
         print("[Ch.7] LLM ready.")
@@ -111,7 +118,6 @@ class EmotionalMemorySystem:
         }
         self._log.append(entry)
 
-        # Overflow → archive to SummaryMemory
         if len(self._log) > self.k:
             overflow = self._log.pop(0)
             self._archive_to_summary(overflow)
@@ -133,52 +139,42 @@ class EmotionalMemorySystem:
         else:              return "stable"
 
     def _archive_to_summary(self, entry: dict) -> None:
-        if not self._llm_ready:
-            return
         msg = (f"Day {entry['day_index']}: risk={entry['risk_level']}, "
                f"emotion={entry['primary_emotion']}, text='{entry['text'][:60]}'")
-        self._summary_memory.save_context({"input": msg}, {"output": ""})
+        self._archive_summary = (
+            self._archive_summary + " | " + msg if self._archive_summary else msg
+        )
 
     def _format_trend_summary(self) -> str:
         if not self._log:
             return "No entries yet."
-        parts = [f"Day {e['day_index']}: {e['risk_level']}" for e in self._log]
-        return " → ".join(parts)
+        return " → ".join(f"Day {e['day_index']}: {e['risk_level']}" for e in self._log)
 
     # ── Layer 2: Empathy Response ──────────────────────────────────────────────
 
     def generate_empathy(self, text: str, risk_level: str) -> str:
         self._ensure_llm()
-        trend_summary = self._format_trend_summary()
-        history       = self._window_memory.load_memory_variables({}).get(
-                            "chat_history", ""
-                        )
-        response = self._empathy_chain.predict(
-            user_text     = text,
+        prompt = EMPATHY_TEMPLATE.format(
+            chat_history  = self._window_buffer.format_history(),
+            trend_summary = self._format_trend_summary(),
             risk_level    = risk_level,
-            trend_summary = trend_summary,
-            chat_history  = history,
+            user_text     = text,
         )
-        self._window_memory.save_context(
-            {"input": text}, {"output": response.strip()}
-        )
-        return response.strip()
+        response = self._llm.invoke(prompt).strip()
+        self._window_buffer.save_context(text, response)
+        return response
 
     # ── Persistence ────────────────────────────────────────────────────────────
 
     def save(self, directory: str = SESSIONS_DIR) -> None:
         os.makedirs(directory, exist_ok=True)
-        path    = os.path.join(directory, f"{self.session_id}.json")
+        path = os.path.join(directory, f"{self.session_id}.json")
         payload = {
-            "session_id"      : self.session_id,
-            "created_at"      : datetime.now(timezone.utc).isoformat(),
-            "total_entries"   : self._total_entries,
-            "window_entries"  : self._log,
-            "long_term_summary": (
-                self._summary_memory.load_memory_variables({})
-                    .get("long_term_summary", "")
-                if self._llm_ready else ""
-            ),
+            "session_id"       : self.session_id,
+            "created_at"       : datetime.now(timezone.utc).isoformat(),
+            "total_entries"    : self._total_entries,
+            "window_entries"   : self._log,
+            "long_term_summary": self._archive_summary,
         }
         with open(path, "w") as f:
             json.dump(payload, f, indent=2)
@@ -189,8 +185,9 @@ class EmotionalMemorySystem:
             return
         with open(path) as f:
             payload = json.load(f)
-        self._log           = payload.get("window_entries", [])
-        self._total_entries = payload.get("total_entries", len(self._log))
+        self._log             = payload.get("window_entries", [])
+        self._total_entries   = payload.get("total_entries", len(self._log))
+        self._archive_summary = payload.get("long_term_summary", "")
 
 
 # ── Standalone demo ────────────────────────────────────────────────────────────
@@ -198,7 +195,7 @@ class EmotionalMemorySystem:
 if __name__ == "__main__":
     print("=== Scenario A: Deteriorating trend ===")
     mem = EmotionalMemorySystem(session_id="demo_a")
-    scenario_a = [
+    for text, risk in [
         ("I had a great day today!", "Positive"),
         ("Feeling pretty good, got things done.", "Positive"),
         ("Normal day, nothing special.", "Neutral"),
@@ -206,24 +203,20 @@ if __name__ == "__main__":
         ("Really tired and anxious lately.", "Negative"),
         ("Can't sleep, everything feels hopeless.", "Negative"),
         ("I just want to disappear.", "Crisis"),
-    ]
-    for text, risk in scenario_a:
+    ]:
         mem.add_entry(text, risk)
-
     print("Trend          :", mem.get_trend())
     print("Trend direction:", mem.get_trend_direction())
 
     print("\n=== Scenario B: Improving trend ===")
     mem2 = EmotionalMemorySystem(session_id="demo_b")
-    scenario_b = [
+    for text, risk in [
         ("I want to disappear.", "Crisis"),
         ("Can't stop crying.", "Crisis"),
         ("Feeling a bit less hopeless.", "Negative"),
         ("Had a small win today.", "Neutral"),
         ("Things are looking up.", "Positive"),
-    ]
-    for text, risk in scenario_b:
+    ]:
         mem2.add_entry(text, risk)
-
     print("Trend          :", mem2.get_trend())
     print("Trend direction:", mem2.get_trend_direction())
