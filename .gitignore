@@ -1,0 +1,24 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+venv/
+.venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Saved models & sessions (large files)
+saved_models/*.pkl
+sessions/*.json
+
+# Output figures
+*.png
+
+# IDE
+.vscode/
+.idea/
