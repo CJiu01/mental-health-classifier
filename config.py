@@ -34,3 +34,12 @@ MEMORY_WINDOW_K = 7
 
 SAVED_MODELS_DIR = "saved_models"
 SESSIONS_DIR     = "sessions"
+
+# ── Ch.11 Fine-tuned MentalBERT (TP2 upgrade) ─────────────────────────────────
+CH11_BASE_MODEL   = "mental/mental-bert-base-uncased"
+CH11_MAX_LENGTH   = 128    # per-sentence token limit for chunking
+CH11_BATCH_SIZE   = 32
+CH11_EPOCHS       = 4
+CH11_LEARNING_RATE = 2e-5
+CH11_WARMUP_RATIO  = 0.1
+CH11_SAVED_DIR    = "saved_models/ch11_mentalbert"

@@ -140,14 +140,18 @@ mental-health-classifier/
 │   ├── ch1_zero_shot.py
 │   ├── ch2_anchor.py
 │   ├── ch3_hidden_state.py
-│   ├── ch4_classifier.py      ← Primary classifier
+│   ├── ch4_classifier.py      ← TP1 core classifier
 │   ├── ch5_clustering.py
 │   ├── ch6_prompt.py
-│   └── ch7_memory.py
-├── saved_models/              # Serialised LogisticRegression model
+│   ├── ch7_memory.py
+│   └── ch11_finetuned.py      ← TP2 core classifier (NEW)
+├── saved_models/
+│   ├── ch4_logreg.pkl         # TP1 LogisticRegression weights
+│   └── ch11_mentalbert/       # TP2 fine-tuned MentalBERT weights (NEW)
 ├── sessions/                  # Per-user session JSON files
 └── notebooks/
     ├── prototype.ipynb        # Main Colab submission notebook
+    ├── ch11_training.ipynb    # TP2 fine-tuning notebook (NEW)
     └── experiments/
         ├── exp1_core_classifier.ipynb
         ├── exp2_model_comparison.ipynb
@@ -180,6 +184,62 @@ mental-health-classifier/
 **6-emotion accuracy (Ch.4):** 0.62 · Macro F1: 0.56
 
 **Risk distribution on test set:** Positive 34.9% · Neutral 26.1% · Negative 20.8% · Crisis 18.3%
+
+---
+
+## TP2 Upgrade — Ch.11 Fine-tuned MentalBERT
+
+TP2 replaces the frozen-encoder + LogisticRegression core (Ch.4) with an end-to-end fine-tuned **MentalBERT** (`mental/mental-bert-base-uncased`) trained on `dair-ai/emotion`. Long-text inputs are handled via **sentence chunking + mean pooling** (Ch.10 bi-encoder concept).
+
+### What changed
+
+| Component | TP1 (Ch.4) | TP2 (Ch.11) |
+|---|---|---|
+| Encoder | Frozen SentenceTransformer | Fine-tuned MentalBERT |
+| Classifier head | LogisticRegression | Linear layer (end-to-end) |
+| Training | Encoder frozen, only LogReg trained | Full backprop through transformer |
+| Long-text support | Truncation at 128 tokens | Sentence chunking + mean pooling |
+| Inference speed | ~0.01s / sample (CPU) | ~0.1s / sample (MPS/GPU) |
+
+### New module
+
+| Chapter | Technique | Module |
+|---|---|---|
+| Ch.11 | Fine-tuned MentalBERT + Sentence Chunking | `modules/ch11_finetuned.py` ← **TP2 Core** |
+
+Training notebook: `notebooks/ch11_training.ipynb` (Google Colab, T4 GPU, ~25 min)
+
+### 6-class Emotion Classification (test set, n=2000)
+
+| Emotion | Ch.4 Precision | Ch.4 F1 | Ch.11 Precision | Ch.11 F1 |
+|---|---|---|---|---|
+| sadness | 0.77 | 0.70 | 0.97 | **0.97** |
+| joy | 0.81 | 0.68 | 0.96 | **0.95** |
+| anger | 0.56 | 0.59 | 0.94 | **0.92** |
+| fear | 0.56 | 0.61 | 0.88 | **0.91** |
+| love | 0.32 | 0.41 | 0.81 | **0.82** |
+| surprise | 0.26 | 0.36 | 0.81 | **0.79** |
+| **Accuracy** | | **0.62** | | **0.93** |
+| **Macro F1** | | **0.56** | | **0.89** |
+
+### 4-tier Risk Level Comparison (test set, n=2000)
+
+| Model | Accuracy | Macro F1 | Macro Precision | Macro Recall |
+|---|---|---|---|---|
+| Ch.4 LogisticReg — TP1 | 0.553 | 0.440 | 0.491 | 0.431 |
+| Ch.11 Fine-tuned MentalBERT — TP2 | **0.583** | **0.487** | **0.611** | **0.471** |
+
+### Training config (Ch.11)
+
+| Hyperparameter | Value |
+|---|---|
+| Base model | `mental/mental-bert-base-uncased` |
+| Dataset | `dair-ai/emotion` (train 16,000) |
+| Epochs | 4 |
+| Learning rate | 2e-5 |
+| Warmup ratio | 0.1 |
+| Max token length | 128 |
+| Batch size | 32 |
 
 ---
 

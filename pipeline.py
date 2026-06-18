@@ -12,7 +12,7 @@ import os
 import uuid
 
 from modules.ch4_classifier import MentalHealthClassifier
-from config import SAVED_MODELS_DIR
+from config import SAVED_MODELS_DIR, CH11_SAVED_DIR
 
 
 class MentalHealthPipeline:
@@ -23,14 +23,27 @@ class MentalHealthPipeline:
         self.mode       = mode
         self.session_id = session_id or str(uuid.uuid4())[:8]
 
-        # Ch.4 — always initialised
+        # Ch.11 — preferred; falls back to Ch.4 if model not found
+        self.ch11_clf = None
+        if load_classifier and os.path.exists(CH11_SAVED_DIR):
+            try:
+                from modules.ch11_finetuned import FinetunedClassifier
+                self.ch11_clf = FinetunedClassifier()
+                print("[Pipeline] Core classifier: Ch.11 Fine-tuned MentalBERT (TP2)")
+            except Exception as e:
+                print(f"[Pipeline] Ch.11 load failed ({e}) — falling back to Ch.4")
+
+        # Ch.4 — always initialised as fallback / for clustering encoder
         self.classifier = MentalHealthClassifier()
         if load_classifier and os.path.exists(
             os.path.join(SAVED_MODELS_DIR, "ch4_logreg.pkl")
         ):
             self.classifier.load()
+            if self.ch11_clf is None:
+                print("[Pipeline] Core classifier: Ch.4 LogisticRegression (TP1)")
         else:
-            print("[Pipeline] ch4 model not found — call train() first.")
+            if self.ch11_clf is None:
+                print("[Pipeline] ch4 model not found — call train() first.")
 
         # ch5/ch6/ch7 instances — created on first use
         self.clusterer  = None   # EmotionClusterer
@@ -55,16 +68,22 @@ class MentalHealthPipeline:
 
     # ── Inference ──────────────────────────────────────────────────────────────
 
+    @property
+    def active_model(self) -> str:
+        return "ch11" if self.ch11_clf is not None else "ch4"
+
     def run(self, text: str, use_cluster: bool = False) -> dict:
         text = self._validate(text)
 
-        # Shared encoding (one pass for ch4 + ch5)
-        vector = self.classifier.encode(text)
+        if self.ch11_clf is not None:
+            # Ch.11 path — end-to-end fine-tuned MentalBERT
+            result = self.ch11_clf.predict(text)
+        else:
+            # Ch.4 path — frozen encoder + LogisticRegression
+            vector = self.classifier.encode(text)
+            result = self.classifier.predict_from_vector(vector, text)
 
-        # Ch.4 — core classification
-        result = self.classifier.predict_from_vector(vector, text)
-
-        # Ch.5 — optional clustering
+        # Ch.5 — optional clustering (uses Ch.4 encoder regardless)
         if use_cluster and self.clusterer and self.clusterer.is_fitted:
             cluster_info               = self.clusterer.transform(text)
             result["cluster_id"]       = cluster_info["cluster_id"]

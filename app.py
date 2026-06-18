@@ -126,9 +126,17 @@ footer { display:none !important; }
 
 with gr.Blocks(title="Mental Health Text Classifier", theme=gr.themes.Soft(), css=CSS) as demo:
 
-    gr.Markdown("""
+    # Detect which model is active
+    _pipe       = _get_pipe("quick")
+    _model_tag  = "Ch.11 Fine-tuned MentalBERT (TP2)" if _pipe.active_model == "ch11" \
+                  else "Ch.4 LogisticRegression (TP1)"
+    _model_badge = "🟣" if _pipe.active_model == "ch11" else "🔵"
+
+    gr.Markdown(f"""
 # 🧠 Mental Health Text Classifier
 **Prototype Demo** — 짧은 텍스트(일기, SNS 글 등)를 입력하면 감정 리스크 수준을 분석합니다.
+
+{_model_badge} **Core Model:** {_model_tag}
 
 | 🟢 Positive | ⚪ Neutral | 🟠 Negative | 🔴 Crisis |
 |---|---|---|---|
